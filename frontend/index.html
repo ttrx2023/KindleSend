@@ -244,8 +244,26 @@
         let globalConfig = { senderEmail:"", senderPass:"", targetKindle:"", downloadPath:"D:\\Downloads", searchUrl:"https://fuckfbi.ru/s/?q=%s" };
 
         window.onload = function() {
-            window.go.main.App.GetSettings().then(([config, isFirstRun]) => {
-                if(config.senderEmail) globalConfig = config;
+            window.go.main.App.GetSettings().then((result) => {
+                let config = result;
+                let isFirstRun = false;
+
+                if (Array.isArray(result)) {
+                    [config, isFirstRun] = result;
+                } else if (result && typeof result === 'object') {
+                    if (result.config !== undefined) {
+                        config = result.config;
+                        isFirstRun = !!result.isFirstRun;
+                    } else if (result[0] !== undefined) {
+                        config = result[0];
+                        isFirstRun = !!result[1];
+                    }
+                }
+
+                if (config && typeof config === 'object') {
+                    globalConfig = config;
+                }
+
                 updateSettingsUI(globalConfig);
                 if(isFirstRun) { openSettings(); } else { loadFiles(); }
             });
@@ -290,7 +308,7 @@
         }
         // ... (其余业务逻辑函数保持不变，sendFiles, toggleAll 等) ...
         function searchBook() { const q=document.getElementById('query').value; if(q) window.go.main.App.SearchBook(q); }
-        function testConn() { window.go.main.App.TestConnection().then(res => { showLog(res); alert(res); }); }
+        function testConn() { window.go.main.App.TestConnection().then(res => { showLog(res); }); }
         function loadFiles() { window.go.main.App.ListBooks().then(books => { allBooks=books; renderTable(); }); }
         function renderTable() {
             const tbody = document.getElementById('table-body'); tbody.innerHTML="";

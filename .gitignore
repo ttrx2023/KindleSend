@@ -6,6 +6,7 @@ frontend/wailsjs/
 # Local configuration (隐私文件)
 config.json
 .kindlepro/
+邮箱配置信息.txt
 
 # IDE settings
 .vscode/
