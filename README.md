@@ -1,6 +1,6 @@
-# KindlePro
+# KindleSend
 
-KindlePro 是一个基于 Wails (Go + Vite) 的桌面工具，用于将本地电子书批量发送到 Kindle 邮箱，并提供简单的搜索入口与配置管理。
+KindleSend 是一个基于 Wails (Go + Vite) 的桌面工具，用于将本地电子书批量发送到 Kindle 邮箱，并提供简单的搜索入口与配置管理。
 
 ## 功能概览
 - 扫描指定下载目录，展示本地书籍列表
@@ -30,7 +30,7 @@ npm run build
 cd ..
 wails build
 ```
-生成文件位置：`build/bin/KindlePro.exe`
+生成文件位置：`build/bin/KindleSend.exe`
 
 ## 使用说明
 1) 打开软件后进入“设置”，填写以下信息并保存：
@@ -51,7 +51,7 @@ wails build
 - `searchUrl`: 搜索网址模板，必须包含 `%s`
 
 ## 配置存储与隐私
-- 配置保存在用户配置目录（Windows 通常为 `%AppData%\KindlePro\config.json`）。
+- 配置保存在用户配置目录（Windows 通常为 `%AppData%\KindleSend\config.json`）。
 - 请勿将任何个人配置文件提交到 GitHub；仓库已忽略本地配置文件。
 
 ## 常见问题

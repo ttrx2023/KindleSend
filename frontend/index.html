@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>Kindle Pro</title>
+    <title>KindleSend</title>
     <style>
         :root {
             --primary: #3b82f6; --bg-color: #f8fafc; --card-bg: #ffffff;
@@ -118,6 +118,29 @@
             background: rgba(15, 23, 42, 0.95); color: #fff; padding: 20px; border-radius: 12px;
             font-size: 13px; line-height: 1.6; overflow-y: auto; display: none; z-index: 200;
         }
+
+        /* Progress Bar */
+        .progress-container {
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+            width: 500px; background: rgba(15, 23, 42, 0.95); padding: 20px; border-radius: 12px;
+            display: none; z-index: 300; color: #fff;
+        }
+        .progress-container.show { display: block; }
+        .progress-header { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; }
+        .progress-bar-bg {
+            width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%; background: linear-gradient(90deg, #10b981, #3b82f6); border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .progress-logs {
+            margin-top: 15px; max-height: 150px; overflow-y: auto; font-size: 12px; line-height: 1.8;
+        }
+        .progress-log-item { padding: 4px 0; border-bottom: 1px solid #334155; }
+        .progress-log-item.success { color: #10b981; }
+        .progress-log-item.error { color: #ef4444; }
+        .progress-log-item.processing { color: #f59e0b; }
     </style>
 </head>
 <body>
@@ -157,6 +180,19 @@
         </div>
     </div>
     <div id="log-overlay" class="log-overlay"></div>
+
+    <!-- Progress Container -->
+    <div id="progress-container" class="progress-container">
+        <div class="progress-header">
+            <span id="progress-title">发送中...</span>
+            <span id="progress-count">0 / 0</span>
+        </div>
+        <div class="progress-bar-bg">
+            <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+        </div>
+        <div id="progress-logs" class="progress-logs"></div>
+    </div>
+
     <div class="footer">
         <div class="status-bar">
             <button class="btn-outline" onclick="loadFiles()">🔄 刷新</button>
@@ -243,7 +279,15 @@
         let currentFilter = 'ALL';
         let globalConfig = { senderEmail:"", senderPass:"", targetKindle:"", downloadPath:"D:\\Downloads", searchUrl:"https://fuckfbi.ru/s/?q=%s" };
 
+        // Progress state
+        let isSending = false;
+
         window.onload = function() {
+            // 注册进度事件监听器
+            if (window.runtime && window.runtime.EventsOn) {
+                window.runtime.EventsOn("send-progress", handleSendProgress);
+            }
+
             window.go.main.App.GetSettings().then((result) => {
                 let config = result;
                 let isFirstRun = false;
@@ -268,6 +312,90 @@
                 if(isFirstRun) { openSettings(); } else { loadFiles(); }
             });
         };
+
+        // 处理发送进度事件
+        function handleSendProgress(event) {
+            const container = document.getElementById('progress-container');
+            const title = document.getElementById('progress-title');
+            const count = document.getElementById('progress-count');
+            const fill = document.getElementById('progress-bar-fill');
+            const logs = document.getElementById('progress-logs');
+            const btn = document.getElementById('sendBtn');
+
+            if (event.status === 'processing') {
+                isSending = true;
+                container.classList.add('show');
+                title.innerText = '正在发送: ' + event.fileName;
+                count.innerText = event.current + ' / ' + event.total;
+                fill.style.width = event.progressPct + '%';
+
+                // 添加处理中日志
+                const logItem = document.createElement('div');
+                logItem.className = 'progress-log-item processing';
+                logItem.id = 'log-' + event.current;
+                logItem.innerText = '⏳ ' + event.message;
+                logs.appendChild(logItem);
+                logs.scrollTop = logs.scrollHeight;
+            }
+            else if (event.status === 'success') {
+                // 更新对应日志条目
+                const logItem = document.getElementById('log-' + event.current);
+                if (logItem) {
+                    logItem.className = 'progress-log-item success';
+                    logItem.innerText = '✅ ' + event.message;
+                }
+                fill.style.width = event.progressPct + '%';
+                count.innerText = event.current + ' / ' + event.total;
+            }
+            else if (event.status === 'error') {
+                // 更新对应日志条目为错误状态
+                let logItem = document.getElementById('log-' + event.current);
+                if (logItem) {
+                    logItem.className = 'progress-log-item error';
+                    logItem.innerText = '❌ ' + event.message;
+                } else {
+                    // 如果是初始错误（无文件等），直接添加
+                    logItem = document.createElement('div');
+                    logItem.className = 'progress-log-item error';
+                    logItem.innerText = '❌ ' + event.message;
+                    logs.appendChild(logItem);
+                }
+                fill.style.width = event.progressPct + '%';
+
+                // 如果是配置错误，直接显示并隐藏
+                if (!event.total) {
+                    container.classList.add('show');
+                    title.innerText = '发送失败';
+                    setTimeout(() => {
+                        container.classList.remove('show');
+                        logs.innerHTML = '';
+                        resetSendButton();
+                    }, 3000);
+                }
+            }
+            else if (event.status === 'finished') {
+                isSending = false;
+                title.innerText = '✅ ' + event.message;
+                fill.style.width = '100%';
+
+                // 3秒后隐藏进度条
+                setTimeout(() => {
+                    container.classList.remove('show');
+                    logs.innerHTML = '';
+                    resetSendButton();
+                    // 取消所有勾选
+                    document.querySelectorAll('.cb').forEach(c => c.checked = false);
+                    updateSel();
+                }, 3000);
+            }
+        }
+
+        function resetSendButton() {
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = false;
+            btn.innerText = '🚀 发送选中书籍 (0)';
+            isSending = false;
+        }
 
         function updateSettingsUI(cfg) {
             document.getElementById('cfg-sender').value = cfg.senderEmail || "";
@@ -328,9 +456,24 @@
         function toggleAll(src) { document.querySelectorAll('.cb').forEach(c=>c.checked=src.checked); updateSel(); }
         function updateSel() { const n=document.querySelectorAll('.cb:checked').length; const btn=document.getElementById('sendBtn'); btn.innerText=`🚀 发送选中书籍 (${n})`; btn.disabled=n===0; }
         function sendFiles() {
-            const paths=Array.from(document.querySelectorAll('.cb:checked')).map(c=>c.getAttribute('data-path'));
-            const btn=document.getElementById('sendBtn'); btn.disabled=true; btn.innerText="⏳ 发送中...";
-            window.go.main.App.SendSelectedBooks(paths).then(res=>{ showLog(res); btn.disabled=false; btn.innerText="🚀 发送选中书籍 (0)"; document.querySelectorAll('.cb').forEach(c=>c.checked=false); });
+            if (isSending) return; // 防止重复点击
+            const paths = Array.from(document.querySelectorAll('.cb:checked')).map(c => c.getAttribute('data-path'));
+            if (paths.length === 0) {
+                showLog('⚠️ 请先选择要发送的书籍');
+                return;
+            }
+
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = true;
+            btn.innerText = '⏳ 发送中...';
+            isSending = true;
+
+            // 清空之前的日志
+            document.getElementById('progress-logs').innerHTML = '';
+            document.getElementById('progress-bar-fill').style.width = '0%';
+
+            // 调用后端，后端会通过事件推送进度
+            window.go.main.App.SendSelectedBooks(paths);
         }
         function showLog(html) { const el=document.getElementById('log-overlay'); el.style.display='block'; el.innerHTML=html; setTimeout(()=>el.style.display='none', 4000); }
     </script>

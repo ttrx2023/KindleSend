@@ -1,4 +1,4 @@
-module KindlePro
+module KindleSend
 
 go 1.23
 

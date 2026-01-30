@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jordan-wright/email"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -40,6 +41,15 @@ type BookInfo struct {
 	ModTime string `json:"modTime"`
 	RawTime int64  `json:"-"`
 	Type    string `json:"type"`
+}
+
+type SendProgressEvent struct {
+	Total       int    `json:"total"`
+	Current     int    `json:"current"`
+	FileName    string `json:"fileName"`
+	Status      string `json:"status"` // processing, success, error, finished
+	Message     string `json:"message"`
+	ProgressPct int    `json:"progressPct"`
 }
 
 var defaultConfig = Config{
@@ -69,7 +79,7 @@ func (a *App) getConfigPath() string {
 	}
 
 	// 创建专属于本软件的文件夹
-	appDir := filepath.Join(configDir, "KindlePro")
+	appDir := filepath.Join(configDir, "KindleSend")
 	_ = os.MkdirAll(appDir, 0755) // 确保文件夹存在
 
 	return filepath.Join(appDir, "config.json")
@@ -178,76 +188,135 @@ func (a *App) TestConnection() string {
 	return "✅ SMTP 连接测试成功！配置正确。"
 }
 
-func (a *App) SendSelectedBooks(filePaths []string) string {
+func (a *App) SendSelectedBooks(filePaths []string) {
+	// 参数验证
 	if a.config.SenderEmail == "" {
-		return "❌ 请先在设置中配置发件人邮箱"
+		wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+			Status:  "error",
+			Message: "❌ 请先在设置中配置发件人邮箱",
+		})
+		return
 	}
 	if len(filePaths) == 0 {
-		return "⚠️ 未选择任何文件"
+		wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+			Status:  "error",
+			Message: "⚠️ 未选择任何文件",
+		})
+		return
 	}
 
-	var logBuilder strings.Builder
-	logBuilder.WriteString(fmt.Sprintf("<b>开始处理 %d 个文件...</b><br>", len(filePaths)))
+	// 启动协程异步处理
+	go func() {
+		total := len(filePaths)
 
-	for _, path := range filePaths {
-		originalName := filepath.Base(path)
-		
-		fileData, err := os.ReadFile(path)
-		if err != nil {
-			logBuilder.WriteString(fmt.Sprintf("<span style='color:#ef4444'>❌ 读取失败: %s</span><br>", originalName))
-			continue
-		}
+		for i, path := range filePaths {
+			originalName := filepath.Base(path)
+			current := i + 1
+			pct := int(float64(current) / float64(total) * 100)
 
-		cleanName := strings.ReplaceAll(originalName, "(Z-Library)", "")
-		cleanName = strings.TrimSpace(cleanName)
-		ext := filepath.Ext(cleanName)
-		nameBody := strings.TrimSuffix(cleanName, ext)
-		cleanName = strings.TrimSpace(nameBody) + ext
+			// 发送"正在处理"事件
+			wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+				Total:       total,
+				Current:     current,
+				FileName:    originalName,
+				Status:      "processing",
+				Message:     fmt.Sprintf("正在发送: %s", originalName),
+				ProgressPct: pct,
+			})
 
-		e := email.NewEmail()
-		e.From = fmt.Sprintf("Kindle Sender <%s>", a.config.SenderEmail)
-		e.To = []string{a.config.TargetKindle}
-		e.Subject = "Convert"
-		e.Text = []byte("Sent via KindlePro Go.")
-		
-		encodedFilename := mime.BEncoding.Encode("UTF-8", cleanName)
-		
-		attachment := &email.Attachment{
-			Filename: cleanName,
-			Header:   textproto.MIMEHeader{},
-			Content:  fileData,
-		}
-		attachment.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", encodedFilename))
-		attachment.Header.Set("Content-Type", "application/octet-stream")
-		
-		e.Attachments = append(e.Attachments, attachment)
+			fileData, err := os.ReadFile(path)
+			if err != nil {
+				wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+					Total:       total,
+					Current:     current,
+					FileName:    originalName,
+					Status:      "error",
+					Message:     fmt.Sprintf("读取失败: %s", err.Error()),
+					ProgressPct: pct,
+				})
+				continue
+			}
 
-		err = e.SendWithTLS("smtp.qq.com:465",
-			smtp.PlainAuth("", a.config.SenderEmail, a.config.SenderPass, "smtp.qq.com"),
-			&tls.Config{ServerName: "smtp.qq.com", InsecureSkipVerify: true})
+			cleanName := strings.ReplaceAll(originalName, "(Z-Library)", "")
+			cleanName = strings.TrimSpace(cleanName)
+			ext := filepath.Ext(cleanName)
+			nameBody := strings.TrimSuffix(cleanName, ext)
+			cleanName = strings.TrimSpace(nameBody) + ext
 
-		if err != nil {
-			errStr := err.Error()
-			if err == io.EOF || strings.Contains(errStr, "short response") {
-				status := "<span style='color:#10b981'>✅ 发送成功</span>"
-				if originalName != cleanName {
-					status += " <span style='font-size:10px;color:#999'>(已清洗)</span>"
+			e := email.NewEmail()
+			e.From = fmt.Sprintf("Kindle Sender <%s>", a.config.SenderEmail)
+			e.To = []string{a.config.TargetKindle}
+			e.Subject = "Convert"
+			e.Text = []byte("Sent via KindleSend.")
+
+			encodedFilename := mime.BEncoding.Encode("UTF-8", cleanName)
+
+			attachment := &email.Attachment{
+				Filename: cleanName,
+				Header:   textproto.MIMEHeader{},
+				Content:  fileData,
+			}
+			attachment.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", encodedFilename))
+			attachment.Header.Set("Content-Type", "application/octet-stream")
+
+			e.Attachments = append(e.Attachments, attachment)
+
+			err = e.SendWithTLS("smtp.qq.com:465",
+				smtp.PlainAuth("", a.config.SenderEmail, a.config.SenderPass, "smtp.qq.com"),
+				&tls.Config{ServerName: "smtp.qq.com", InsecureSkipVerify: true})
+
+			// 判断发送结果
+			sendSuccess := false
+			var errMsg string
+			if err != nil {
+				errStr := err.Error()
+				// 某些情况下 EOF 或 short response 实际上是成功的
+				if err == io.EOF || strings.Contains(errStr, "short response") {
+					sendSuccess = true
+				} else {
+					errMsg = errStr
 				}
-				logBuilder.WriteString(fmt.Sprintf("%s: %s<br>", status, cleanName))
 			} else {
-				logBuilder.WriteString(fmt.Sprintf("<span style='color:#ef4444'>❌ 发送失败 [%s]: %s</span><br>", cleanName, errStr))
+				sendSuccess = true
 			}
-		} else {
-			status := "<span style='color:#10b981'>✅ 发送成功</span>"
-			if originalName != cleanName {
-				status += " <span style='font-size:10px;color:#999'>(已清洗)</span>"
+
+			if sendSuccess {
+				msg := fmt.Sprintf("发送成功: %s", cleanName)
+				if originalName != cleanName {
+					msg += " (已清洗)"
+				}
+				wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+					Total:       total,
+					Current:     current,
+					FileName:    cleanName,
+					Status:      "success",
+					Message:     msg,
+					ProgressPct: pct,
+				})
+			} else {
+				wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+					Total:       total,
+					Current:     current,
+					FileName:    cleanName,
+					Status:      "error",
+					Message:     fmt.Sprintf("发送失败: %s", errMsg),
+					ProgressPct: pct,
+				})
 			}
-			logBuilder.WriteString(fmt.Sprintf("%s: %s<br>", status, cleanName))
+
+			// 多文件时间隔发送，避免被邮件服务器限流
+			if total > 1 && current < total {
+				time.Sleep(1 * time.Second)
+			}
 		}
-		
-		if len(filePaths) > 1 {
-			time.Sleep(1 * time.Second)
-		}
-	}
-	return logBuilder.String()
+
+		// 发送完成事件
+		wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+			Total:       total,
+			Current:     total,
+			Status:      "finished",
+			Message:     fmt.Sprintf("全部处理完成，共 %d 个文件", total),
+			ProgressPct: 100,
+		})
+	}()
 }

@@ -18,9 +18,9 @@ const state = {
 document.querySelector('#app').innerHTML = `
   <div class="container">
     <header class="app-header">
-      <img id="logo" class="logo" alt="KindlePro logo" />
+      <img id="logo" class="logo" alt="KindleSend logo" />
       <div class="app-title">
-        <h1>KindlePro</h1>
+        <h1>KindleSend</h1>
         <p class="subtitle">Send local books to Kindle via email.</p>
       </div>
     </header>

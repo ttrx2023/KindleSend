@@ -24,9 +24,9 @@
 - For UI changes, smoke-test with `wails dev` and/or `npm run dev`.
 
 ## Commit & Pull Request Guidelines
-- Current history uses a short, sentence-style subject (e.g., "Initial commit: KindlePro v1.0"). Keep subjects concise and descriptive.
+- Current history uses a short, sentence-style subject (e.g., "Initial commit: KindleSend v1.0"). Keep subjects concise and descriptive.
 - PRs should include a summary, test steps, and screenshots for UI changes; link related issues when applicable.
 
 ## Security & Configuration
-- Runtime settings are saved in the user config directory (Windows: `%AppData%\KindlePro\config.json`). Do not commit real credentials.
+- Runtime settings are saved in the user config directory (Windows: `%AppData%\KindleSend\config.json`). Do not commit real credentials.
 - If you change defaults, update `defaultConfig` in `app.go` and document required fields.
