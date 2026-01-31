@@ -2,43 +2,40 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-KindleSend is a desktop application built with [Wails](https://wails.io/) (Go + Vite) that allows users to scan local directories for e-books and send them to a Kindle via email.
+## Build & Run
 
-- **Backend**: Go (Wails)
-- **Frontend**: Vite (Node.js/npm)
-- **Architecture**: Single-process desktop app where Go handles file system/network operations and frontend handles UI.
-
-## Build & Development Commands
-
-### Prerequisites
-- Go
-- Node.js + npm
-- Wails CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-
-### Common Commands
-- **Start Development Server**: `wails dev` (Runs backend and frontend with hot reload)
-- **Build Production Binary**: `wails build` (Output: `build/bin/KindleSend.exe`)
-- **Install Frontend Dependencies**: `cd frontend && npm install`
+- **Start Dev Server**: `wails dev` (starts backend + frontend with hot reload)
+- **Build Production**: `wails build` (creates `build/bin/KindleSend.exe`)
+- **Install Frontend Deps**: `cd frontend && npm install`
 - **Build Frontend Only**: `cd frontend && npm run build`
+- **Run Tests**: No tests currently exist in the codebase.
+- **Lint**: `go vet ./...` (backend), `npm run lint` (frontend - if available)
 
-## Code Structure
+## Architecture
+
+KindleSend is a desktop application using the **Wails** framework (Go backend + Vite/Web frontend).
 
 ### Backend (Go)
-- **`main.go`**: Application entry point. Configures the Wails application window, assets, and binds the `App` struct to the frontend.
-- **`app.go`**: Core business logic.
-  - **`App` struct**: The main controller. Methods exported to frontend are bound here.
-  - **Configuration**: JSON-based config stored in the user's config directory (`%AppData%/KindleSend/config.json` on Windows).
-  - **Email Logic**: Uses `net/smtp` and `github.com/jordan-wright/email` to send files. Currently hardcoded for QQ Mail SMTP (`smtp.qq.com`).
-  - **File Scanning**: Scans specific extensions (.epub, .mobi, .pdf, .azw3, .txt) in the configured download path.
+- **Entry Point**: `main.go` initializes the Wails application, window settings, and binds the `App` struct.
+- **Core Logic (`app.go`)**:
+  - **App Struct**: Methods bound here are exposed to the frontend.
+  - **Configuration**: JSON-based config (`%AppData%/KindleSend/config.json`). Note: Stores email credentials in plain text.
+  - **Email**: Uses `net/smtp` and `jordan-wright/email`. Hardcoded for QQ Mail (`smtp.qq.com`) using TLS (port 465 send, 587 test).
+  - **File Scanning**: Scans `downloadPath` for specific e-book formats (`.epub`, `.mobi`, `.pdf`, `.azw3`, `.txt`).
 
-### Frontend (`frontend/`)
-- Standard Vite project structure.
-- Communicates with Go backend via Wails runtime (auto-generated bindings).
+### Frontend (Vite + JS)
+- Located in `frontend/`.
+- Standard Vite project structure (`src/main.js`, `style.css`).
+- Interacts with backend via auto-generated Wails bindings (window.go.main.App).
+- Listens for backend events (e.g., "send-progress") via `wailsRuntime.EventsEmit`.
 
-## Architecture Notes
-- **State Management**: Configuration is loaded from disk on startup and saved explicitly via `SaveSettings`.
-- **Security**:
-  - Email passwords/auth codes are stored in plain text in the local config file.
-  - SMTP connection uses TLS.
-- **File Handling**: The app reads files locally and attaches them to emails. It performs basic filename cleaning (e.g., removing "(Z-Library)" suffixes) before sending.
+## Key Features & Implementation Details
+- **Settings**: Loaded from disk on startup/demand. explicitly saved via `SaveSettings`.
+- **Async Operations**: `SendSelectedBooks` runs in a goroutine to prevent UI blocking, emitting progress events back to the UI.
+- **File Processing**: Filenames are sanitized (e.g., removing suffixes like "(Z-Library)") before attachment.
+- **Event Names**:
+  - `send-progress`: Carries status updates during bulk email sending.
+
+## Conventions
+- **Search**: The app uses a user-configurable URL template for searching books (replaces `%s` with query).
+- **Dependencies**: Managed via `go.mod` (Go) and `frontend/package.json` (Node).

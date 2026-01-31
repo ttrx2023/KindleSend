@@ -3,145 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>KindleSend</title>
-    <style>
-        :root {
-            --primary: #3b82f6; --bg-color: #f8fafc; --card-bg: #ffffff;
-            --text-main: #1e293b; --text-sub: #64748b; --border: #e2e8f0; --success: #10b981;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
-            background: var(--bg-color); color: var(--text-main);
-            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
-        }
-
-        /* Header */
-        .header {
-            background: var(--card-bg); padding: 16px 24px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;
-            gap: 12px; z-index: 10; flex-shrink: 0;
-        }
-        .header-top, .filter-bar { display: flex; gap: 10px; align-items: center; }
-        .filter-chip {
-            padding: 5px 14px; border-radius: 20px; font-size: 13px; font-weight: 500;
-            cursor: pointer; background: #f1f5f9; color: var(--text-sub); border: 1px solid transparent;
-        }
-        .filter-chip.active { background: #eff6ff; color: var(--primary); border-color: #bfdbfe; }
-        
-        .search-wrapper { flex: 1; position: relative; }
-        .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-sub); }
-        input.search-input {
-            width: 100%; padding: 12px 12px 12px 38px; border: 1px solid var(--border);
-            border-radius: 8px; background: #f8fafc; outline: none; transition: 0.2s;
-        }
-        input.search-input:focus { background: #fff; border-color: var(--primary); }
-        
-        button {
-            border: none; border-radius: 8px; padding: 10px 18px; font-weight: 600; font-size: 13px;
-            cursor: pointer; display: flex; align-items: center; gap: 6px; transition: 0.2s; white-space: nowrap;
-        }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { filter: brightness(1.1); }
-        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-sub); }
-        .btn-outline:hover { background: #f1f5f9; color: var(--text-main); }
-        .btn-icon { padding: 10px; font-size: 16px; }
-
-        /* Content List - 加高行高 */
-        .content { flex: 1; padding: 20px 24px; overflow-y: auto; min-height: 0; }
-        .file-card { background: var(--card-bg); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid var(--border); }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        thead th {
-            text-align: left; padding: 16px 20px; background: #f8fafc;
-            border-bottom: 1px solid var(--border); color: var(--text-sub);
-            position: sticky; top: 0; z-index: 5;
-        }
-        /* 列表行加高优化 */
-        tbody td { padding: 18px 20px; color: var(--text-main); vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
-        tbody tr:hover { background: #f8fafc; cursor: pointer; }
-        tbody tr.selected { background: #eff6ff; }
-        .type-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; color: white; background: #94a3b8; margin-right: 10px; }
-        .type-EPUB { background: #f59e0b; } .type-PDF { background: #ef4444; } .type-MOBI { background: #3b82f6; } .type-AZW3 { background: #10b981; }
-
-        /* Footer */
-        .footer { background: var(--card-bg); padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; z-index: 10; }
-        .btn-send { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 12px 30px; font-size: 15px; }
-        .btn-send:disabled { background: #cbd5e1; cursor: not-allowed; }
-
-        /* Modals - 加宽加大 */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); backdrop-filter: blur(3px);
-            display: none; justify-content: center; align-items: center; z-index: 1000;
-        }
-        .modal-overlay.show { display: flex; }
-        /* 模态框宽度增加到 800px */
-        .modal-box {
-            background: white; width: 800px; padding: 30px; border-radius: 16px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.2); 
-            max-height: 95vh; display: flex; flex-direction: column;
-        }
-        .modal-header { display: flex; justify-content: space-between; margin-bottom: 24px; }
-        .modal-title { font-size: 20px; font-weight: 700; color: #0f172a; }
-        .close-btn { cursor: pointer; font-size: 24px; color: #94a3b8; line-height: 1; }
-        
-        /* 左右分栏布局 (针对设置) */
-        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .full-width { grid-column: span 2; }
-
-        .form-group { margin-bottom: 8px; }
-        .form-label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: #475569; }
-        .form-input { 
-            width: 100%; padding: 12px; border: 1px solid var(--border); 
-            border-radius: 8px; font-size: 14px; outline: none; background: #fff;
-        }
-        .form-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-        
-        .saved-hint {
-            margin-top: 4px; font-size: 12px; color: #10b981; 
-            background: #f0fdf4; padding: 6px 10px; border-radius: 6px; 
-            border: 1px solid #bbf7d0; display: flex; align-items: center; gap: 6px;
-        }
-        .saved-hint::before { content: '✔ 已保存'; font-weight: bold; }
-        .saved-hint.empty::before { content: '⚠️ 未设置'; }
-        .saved-hint.empty { color: #b45309; background: #fffbeb; border-color: #fde68a; }
-
-        /* 帮助页面样式 */
-        .help-content { overflow-y: auto; padding-right: 10px; }
-        .help-card { background: #f8fafc; padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #e2e8f0; }
-        .help-head { font-weight: 700; color: #334155; margin-bottom: 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-        .help-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: #475569; }
-        .help-list li { margin-bottom: 4px; }
-
-        /* Log Toast */
-        .log-overlay {
-            position: fixed; bottom: 90px; right: 30px; width: 400px; max-height: 300px;
-            background: rgba(15, 23, 42, 0.95); color: #fff; padding: 20px; border-radius: 12px;
-            font-size: 13px; line-height: 1.6; overflow-y: auto; display: none; z-index: 200;
-        }
-
-        /* Progress Bar */
-        .progress-container {
-            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-            width: 500px; background: rgba(15, 23, 42, 0.95); padding: 20px; border-radius: 12px;
-            display: none; z-index: 300; color: #fff;
-        }
-        .progress-container.show { display: block; }
-        .progress-header { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; }
-        .progress-bar-bg {
-            width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden;
-        }
-        .progress-bar-fill {
-            height: 100%; background: linear-gradient(90deg, #10b981, #3b82f6); border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-        .progress-logs {
-            margin-top: 15px; max-height: 150px; overflow-y: auto; font-size: 12px; line-height: 1.8;
-        }
-        .progress-log-item { padding: 4px 0; border-bottom: 1px solid #334155; }
-        .progress-log-item.success { color: #10b981; }
-        .progress-log-item.error { color: #ef4444; }
-        .progress-log-item.processing { color: #f59e0b; }
-    </style>
+    <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
     <div class="header">
@@ -166,15 +28,22 @@
 
     <div class="content">
         <div class="file-card">
-            <table>
-                <thead>
-                    <tr><th style="width:40px;text-align:center"><input type="checkbox" id="selectAllCb" onchange="toggleAll(this)"></th><th>文件名</th><th style="width:100px">大小</th><th style="width:160px">修改时间</th></tr>
-                </thead>
-                <tbody id="table-body"></tbody>
-            </table>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;text-align:center"><input type="checkbox" id="selectAllCb" onchange="toggleAll(this)"></th>
+                            <th data-sort="name" onclick="sortBooks('name')">文件名 <span class="sort-icon">↕</span></th>
+                            <th style="width:100px" data-sort="size" onclick="sortBooks('size')">大小 <span class="sort-icon">↕</span></th>
+                            <th style="width:160px" data-sort="modTime" class="sorted" onclick="sortBooks('modTime')">修改时间 <span class="sort-icon">↓</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
             <div id="empty-state" style="padding:60px;text-align:center;display:none;color:#64748b">
                 <div style="font-size:40px;margin-bottom:10px">📂</div>
-                <p>这里空空如也，请先去“设置”检查下载路径</p>
+                <p>这里空空如也，请先去"设置"检查下载路径</p>
                 <button class="btn-outline" onclick="loadFiles()" style="margin:15px auto">刷新列表</button>
             </div>
         </div>
@@ -182,15 +51,23 @@
     <div id="log-overlay" class="log-overlay"></div>
 
     <!-- Progress Container -->
-    <div id="progress-container" class="progress-container">
-        <div class="progress-header">
-            <span id="progress-title">发送中...</span>
-            <span id="progress-count">0 / 0</span>
+    <div id="progress-container" class="progress-container" style="text-align:center">
+        <div class="progress-ring">
+            <svg width="120" height="120">
+               <circle class="bg" stroke-width="8" fill="transparent" r="52" cx="60" cy="60"/>
+               <circle class="progress" stroke-width="8" fill="transparent" r="52" cx="60" cy="60" style="stroke-dasharray: 326.726; stroke-dashoffset: 326.726;"/>
+            </svg>
+            <div class="progress-text" id="progress-pct-text">0%</div>
         </div>
-        <div class="progress-bar-bg">
+        <div class="progress-header" style="justify-content:center; margin-bottom:5px;">
+            <span id="progress-title" style="font-size:16px; font-weight:bold;">准备发送...</span>
+        </div>
+        <div style="color:#94a3b8; font-size:13px; margin-bottom:15px;" id="progress-count">0 / 0</div>
+
+        <div class="progress-bar-bg" style="display:none">
             <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
         </div>
-        <div id="progress-logs" class="progress-logs"></div>
+        <div id="progress-logs" class="progress-logs" style="text-align:left"></div>
     </div>
 
     <div class="footer">
@@ -204,37 +81,80 @@
     <div id="modal-settings" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header"><div class="modal-title">⚙️ 软件配置</div><div class="close-btn" onclick="closeModal('modal-settings')">&times;</div></div>
-            
-            <div class="settings-grid">
-                <div class="form-group">
-                    <label class="form-label">发件人 QQ 邮箱</label>
-                    <input type="text" id="cfg-sender" class="form-input" placeholder="例如: 123@qq.com">
-                    <div id="hint-sender" class="saved-hint empty">未配置</div>
+
+            <div class="tabs">
+                <div class="tab-item active" onclick="switchTab('tab-account', this)">邮箱配置</div>
+                <div class="tab-item" onclick="switchTab('tab-paths', this)">本地设置</div>
+            </div>
+
+            <div id="tab-account" class="tab-content active tab-scrollable">
+                <div class="settings-section">
+                    <div class="section-title">发送账户</div>
+                    <div class="settings-grid">
+                        <div class="form-group">
+                            <label class="form-label">发件人邮箱</label>
+                            <input type="text" id="cfg-sender" class="form-input" placeholder="例如: 123@qq.com">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">邮箱授权码</label>
+                            <input type="password" id="cfg-pass" class="form-input" placeholder="16位授权码，非登录密码">
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">QQ 邮箱授权码 (非密码)</label>
-                    <input type="password" id="cfg-pass" class="form-input" placeholder="例如: byqe...">
-                    <div id="hint-pass" class="saved-hint empty">未配置</div>
+                <div class="settings-section">
+                    <div class="section-title">接收设置</div>
+                    <div class="settings-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label">Kindle 接收邮箱</label>
+                            <input type="text" id="cfg-kindle" class="form-input" placeholder="例如: name@kindle.com">
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group full-width">
-                    <label class="form-label">Kindle 接收邮箱</label>
-                    <input type="text" id="cfg-kindle" class="form-input" placeholder="例如: name@kindle.com">
-                    <div id="hint-kindle" class="saved-hint empty">未配置</div>
+                <div class="settings-section">
+                    <div class="section-title">SMTP 服务器 <span class="section-hint">（通常无需修改）</span></div>
+                    <div class="settings-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label">服务器地址</label>
+                            <input type="text" id="cfg-smtp-server" class="form-input" placeholder="默认: smtp.qq.com">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">发送端口 (SSL)</label>
+                            <input type="number" id="cfg-smtp-port" class="form-input" placeholder="默认: 465">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">测试端口</label>
+                            <input type="number" id="cfg-smtp-test-port" class="form-input" placeholder="默认: 587">
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group full-width">
-                    <label class="form-label">本地书籍下载路径</label>
-                    <input type="text" id="cfg-path" class="form-input" placeholder="例如 D:\Downloads">
-                    <div id="hint-path" class="saved-hint empty">未配置</div>
+                <div id="account-warnings" class="config-warnings"></div>
+            </div>
+
+            <div id="tab-paths" class="tab-content">
+                <div class="settings-section">
+                    <div class="section-title">文件路径</div>
+                    <div class="settings-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label">本地书籍下载路径</label>
+                            <input type="text" id="cfg-path" class="form-input" placeholder="例如 D:\Downloads">
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group full-width">
-                    <label class="form-label">搜索网址模板</label>
-                    <input type="text" id="cfg-url" class="form-input">
-                    <div id="hint-url" class="saved-hint empty">未配置</div>
+                <div class="settings-section">
+                    <div class="section-title">搜索设置</div>
+                    <div class="settings-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label">搜索网址模板</label>
+                            <input type="text" id="cfg-url" class="form-input" placeholder="使用 %s 代表搜索关键词">
+                            <div class="field-hint">例如: https://example.com/search?q=%s</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div style="margin-top:auto; text-align:right; padding-top:20px;">
-                <button class="btn-primary" onclick="saveSettings()" style="display:inline-flex; padding:12px 30px;">💾 保存所有配置</button>
+            <div class="modal-footer">
+                <button class="btn-outline" onclick="testConnInline()" id="testConnBtn">🔗 测试连接</button>
+                <button class="btn-primary" onclick="saveSettings()" style="padding:12px 30px;">💾 保存配置</button>
             </div>
         </div>
     </div>
@@ -274,208 +194,6 @@
         </div>
     </div>
 
-    <script>
-        let allBooks = [];
-        let currentFilter = 'ALL';
-        let globalConfig = { senderEmail:"", senderPass:"", targetKindle:"", downloadPath:"D:\\Downloads", searchUrl:"https://fuckfbi.ru/s/?q=%s" };
-
-        // Progress state
-        let isSending = false;
-
-        window.onload = function() {
-            // 注册进度事件监听器
-            if (window.runtime && window.runtime.EventsOn) {
-                window.runtime.EventsOn("send-progress", handleSendProgress);
-            }
-
-            window.go.main.App.GetSettings().then((result) => {
-                let config = result;
-                let isFirstRun = false;
-
-                if (Array.isArray(result)) {
-                    [config, isFirstRun] = result;
-                } else if (result && typeof result === 'object') {
-                    if (result.config !== undefined) {
-                        config = result.config;
-                        isFirstRun = !!result.isFirstRun;
-                    } else if (result[0] !== undefined) {
-                        config = result[0];
-                        isFirstRun = !!result[1];
-                    }
-                }
-
-                if (config && typeof config === 'object') {
-                    globalConfig = config;
-                }
-
-                updateSettingsUI(globalConfig);
-                if(isFirstRun) { openSettings(); } else { loadFiles(); }
-            });
-        };
-
-        // 处理发送进度事件
-        function handleSendProgress(event) {
-            const container = document.getElementById('progress-container');
-            const title = document.getElementById('progress-title');
-            const count = document.getElementById('progress-count');
-            const fill = document.getElementById('progress-bar-fill');
-            const logs = document.getElementById('progress-logs');
-            const btn = document.getElementById('sendBtn');
-
-            if (event.status === 'processing') {
-                isSending = true;
-                container.classList.add('show');
-                title.innerText = '正在发送: ' + event.fileName;
-                count.innerText = event.current + ' / ' + event.total;
-                fill.style.width = event.progressPct + '%';
-
-                // 添加处理中日志
-                const logItem = document.createElement('div');
-                logItem.className = 'progress-log-item processing';
-                logItem.id = 'log-' + event.current;
-                logItem.innerText = '⏳ ' + event.message;
-                logs.appendChild(logItem);
-                logs.scrollTop = logs.scrollHeight;
-            }
-            else if (event.status === 'success') {
-                // 更新对应日志条目
-                const logItem = document.getElementById('log-' + event.current);
-                if (logItem) {
-                    logItem.className = 'progress-log-item success';
-                    logItem.innerText = '✅ ' + event.message;
-                }
-                fill.style.width = event.progressPct + '%';
-                count.innerText = event.current + ' / ' + event.total;
-            }
-            else if (event.status === 'error') {
-                // 更新对应日志条目为错误状态
-                let logItem = document.getElementById('log-' + event.current);
-                if (logItem) {
-                    logItem.className = 'progress-log-item error';
-                    logItem.innerText = '❌ ' + event.message;
-                } else {
-                    // 如果是初始错误（无文件等），直接添加
-                    logItem = document.createElement('div');
-                    logItem.className = 'progress-log-item error';
-                    logItem.innerText = '❌ ' + event.message;
-                    logs.appendChild(logItem);
-                }
-                fill.style.width = event.progressPct + '%';
-
-                // 如果是配置错误，直接显示并隐藏
-                if (!event.total) {
-                    container.classList.add('show');
-                    title.innerText = '发送失败';
-                    setTimeout(() => {
-                        container.classList.remove('show');
-                        logs.innerHTML = '';
-                        resetSendButton();
-                    }, 3000);
-                }
-            }
-            else if (event.status === 'finished') {
-                isSending = false;
-                title.innerText = '✅ ' + event.message;
-                fill.style.width = '100%';
-
-                // 3秒后隐藏进度条
-                setTimeout(() => {
-                    container.classList.remove('show');
-                    logs.innerHTML = '';
-                    resetSendButton();
-                    // 取消所有勾选
-                    document.querySelectorAll('.cb').forEach(c => c.checked = false);
-                    updateSel();
-                }, 3000);
-            }
-        }
-
-        function resetSendButton() {
-            const btn = document.getElementById('sendBtn');
-            btn.disabled = false;
-            btn.innerText = '🚀 发送选中书籍 (0)';
-            isSending = false;
-        }
-
-        function updateSettingsUI(cfg) {
-            document.getElementById('cfg-sender').value = cfg.senderEmail || "";
-            document.getElementById('cfg-pass').value = cfg.senderPass || "";
-            document.getElementById('cfg-kindle').value = cfg.targetKindle || "";
-            document.getElementById('cfg-path').value = cfg.downloadPath || "D:\\Downloads";
-            document.getElementById('cfg-url').value = cfg.searchUrl || "https://fuckfbi.ru/s/?q=%s";
-
-            updateHint('hint-sender', cfg.senderEmail);
-            updateHint('hint-pass', cfg.senderPass ? "******" : "");
-            updateHint('hint-kindle', cfg.targetKindle);
-            updateHint('hint-path', cfg.downloadPath);
-            updateHint('hint-url', cfg.searchUrl);
-        }
-
-        function updateHint(id, val) {
-            const el = document.getElementById(id);
-            if(val) { el.innerText = val; el.classList.remove('empty'); }
-            else { el.innerText = "未设置"; el.classList.add('empty'); }
-        }
-
-        function openSettings() { updateSettingsUI(globalConfig); document.getElementById('modal-settings').classList.add('show'); }
-        function openHelp() { document.getElementById('modal-help').classList.add('show'); }
-        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-
-        function saveSettings() {
-            const config = {
-                senderEmail: document.getElementById('cfg-sender').value.trim(),
-                senderPass: document.getElementById('cfg-pass').value.trim(),
-                targetKindle: document.getElementById('cfg-kindle').value.trim(),
-                downloadPath: document.getElementById('cfg-path').value.trim(),
-                searchUrl: document.getElementById('cfg-url').value.trim()
-            };
-            if(!config.senderEmail || !config.senderPass) { alert("邮箱信息不能为空"); return; }
-            window.go.main.App.SaveSettings(config).then(res => {
-                showLog(res); closeModal('modal-settings'); globalConfig = config; loadFiles();
-            });
-        }
-        // ... (其余业务逻辑函数保持不变，sendFiles, toggleAll 等) ...
-        function searchBook() { const q=document.getElementById('query').value; if(q) window.go.main.App.SearchBook(q); }
-        function testConn() { window.go.main.App.TestConnection().then(res => { showLog(res); }); }
-        function loadFiles() { window.go.main.App.ListBooks().then(books => { allBooks=books; renderTable(); }); }
-        function renderTable() {
-            const tbody = document.getElementById('table-body'); tbody.innerHTML="";
-            const filtered = allBooks.filter(b => currentFilter==='ALL'||b.type===currentFilter);
-            if(filtered.length===0) { document.getElementById('empty-state').style.display='block'; return; }
-            document.getElementById('empty-state').style.display='none';
-            filtered.forEach(b => {
-                const tr = document.createElement('tr');
-                tr.onclick = (e) => { if(e.target.type!=='checkbox') { const cb=tr.querySelector('.cb'); cb.checked=!cb.checked; updateSel(); }};
-                tr.innerHTML=`<td style="text-align:center"><input type="checkbox" class="cb" data-path="${b.path}" onchange="updateSel()"></td>
-                    <td style="font-weight:500"><span class="type-badge type-${b.type}">${b.type}</span>${b.name}</td>
-                    <td style="color:#64748b;font-size:13px">${b.size}</td><td style="color:#64748b;font-size:13px">${b.modTime}</td>`;
-                tbody.appendChild(tr);
-            });
-        }
-        function applyFilter(t, el) { currentFilter=t; document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderTable(); }
-        function toggleAll(src) { document.querySelectorAll('.cb').forEach(c=>c.checked=src.checked); updateSel(); }
-        function updateSel() { const n=document.querySelectorAll('.cb:checked').length; const btn=document.getElementById('sendBtn'); btn.innerText=`🚀 发送选中书籍 (${n})`; btn.disabled=n===0; }
-        function sendFiles() {
-            if (isSending) return; // 防止重复点击
-            const paths = Array.from(document.querySelectorAll('.cb:checked')).map(c => c.getAttribute('data-path'));
-            if (paths.length === 0) {
-                showLog('⚠️ 请先选择要发送的书籍');
-                return;
-            }
-
-            const btn = document.getElementById('sendBtn');
-            btn.disabled = true;
-            btn.innerText = '⏳ 发送中...';
-            isSending = true;
-
-            // 清空之前的日志
-            document.getElementById('progress-logs').innerHTML = '';
-            document.getElementById('progress-bar-fill').style.width = '0%';
-
-            // 调用后端，后端会通过事件推送进度
-            window.go.main.App.SendSelectedBooks(paths);
-        }
-        function showLog(html) { const el=document.getElementById('log-overlay'); el.style.display='block'; el.innerHTML=html; setTimeout(()=>el.style.display='none', 4000); }
-    </script>
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>

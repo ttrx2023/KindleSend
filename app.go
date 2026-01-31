@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jordan-wright/email"
@@ -22,8 +23,10 @@ import (
 )
 
 type App struct {
-	ctx    context.Context
-	config Config
+	ctx        context.Context
+	config     Config
+	cancelSend context.CancelFunc
+	mu         sync.Mutex
 }
 
 type Config struct {
@@ -32,6 +35,9 @@ type Config struct {
 	TargetKindle string `json:"targetKindle"`
 	DownloadPath string `json:"downloadPath"`
 	SearchUrl    string `json:"searchUrl"`
+	SmtpServer   string `json:"smtpServer"`
+	SmtpPort     int    `json:"smtpPort"`
+	SmtpTestPort int    `json:"smtpTestPort"`
 }
 
 type BookInfo struct {
@@ -58,6 +64,9 @@ var defaultConfig = Config{
 	TargetKindle: "",
 	DownloadPath: "D:\\Downloads",
 	SearchUrl:    "https://fuckfbi.ru/s/?q=%s",
+	SmtpServer:   "smtp.qq.com",
+	SmtpPort:     465,
+	SmtpTestPort: 587,
 }
 
 func NewApp() *App {
@@ -118,6 +127,15 @@ func (a *App) GetSettings() (Config, bool) {
 
 // ================= 业务逻辑 =================
 
+func (a *App) CancelSend() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cancelSend != nil {
+		a.cancelSend()
+		a.cancelSend = nil
+	}
+}
+
 func (a *App) SearchBook(query string) {
 	baseUrl := a.config.SearchUrl
 	if baseUrl == "" {
@@ -173,12 +191,22 @@ func (a *App) TestConnection() string {
 		return "❌ 请先配置邮箱信息"
 	}
 
-	auth := smtp.PlainAuth("", a.config.SenderEmail, a.config.SenderPass, "smtp.qq.com")
-	client, err := smtp.Dial("smtp.qq.com:587")
+	host := a.config.SmtpServer
+	if host == "" {
+		host = "smtp.qq.com"
+	}
+	port := a.config.SmtpTestPort
+	if port == 0 {
+		port = 587
+	}
+	addr := fmt.Sprintf("%s:%d", host, port)
+
+	auth := smtp.PlainAuth("", a.config.SenderEmail, a.config.SenderPass, host)
+	client, err := smtp.Dial(addr)
 	if err != nil {
 		return "❌ 连接服务器失败: " + err.Error()
 	}
-	if err = client.StartTLS(&tls.Config{ServerName: "smtp.qq.com", InsecureSkipVerify: true}); err != nil {
+	if err = client.StartTLS(&tls.Config{ServerName: host, InsecureSkipVerify: true}); err != nil {
 		return "❌ TLS 握手失败: " + err.Error()
 	}
 	if err = client.Auth(auth); err != nil {
@@ -205,11 +233,40 @@ func (a *App) SendSelectedBooks(filePaths []string) {
 		return
 	}
 
+	// 准备上下文
+	a.mu.Lock()
+	if a.cancelSend != nil {
+		a.cancelSend()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cancelSend = cancel
+	a.mu.Unlock()
+
 	// 启动协程异步处理
 	go func() {
+		defer func() {
+			cancel()
+			a.mu.Lock()
+			a.cancelSend = nil
+			a.mu.Unlock()
+		}()
+
 		total := len(filePaths)
 
 		for i, path := range filePaths {
+			// 检查是否取消
+			select {
+			case <-ctx.Done():
+				wailsRuntime.EventsEmit(a.ctx, "send-progress", SendProgressEvent{
+					Status:  "error",
+					Message: "⛔ 已停止发送",
+					Current: i,
+					Total:   total,
+				})
+				return
+			default:
+			}
+
 			originalName := filepath.Base(path)
 			current := i + 1
 			pct := int(float64(current) / float64(total) * 100)
@@ -261,9 +318,19 @@ func (a *App) SendSelectedBooks(filePaths []string) {
 
 			e.Attachments = append(e.Attachments, attachment)
 
-			err = e.SendWithTLS("smtp.qq.com:465",
-				smtp.PlainAuth("", a.config.SenderEmail, a.config.SenderPass, "smtp.qq.com"),
-				&tls.Config{ServerName: "smtp.qq.com", InsecureSkipVerify: true})
+			host := a.config.SmtpServer
+			if host == "" {
+				host = "smtp.qq.com"
+			}
+			port := a.config.SmtpPort
+			if port == 0 {
+				port = 465
+			}
+			addr := fmt.Sprintf("%s:%d", host, port)
+
+			err = e.SendWithTLS(addr,
+				smtp.PlainAuth("", a.config.SenderEmail, a.config.SenderPass, host),
+				&tls.Config{ServerName: host, InsecureSkipVerify: true})
 
 			// 判断发送结果
 			sendSuccess := false
