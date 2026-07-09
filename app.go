@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net"
+	"net/http"
 	"net/smtp"
 	"net/textproto"
 	"net/url"
@@ -80,6 +81,7 @@ var supportedBookExts = map[string]bool{
 }
 
 const smtpTestTimeout = 8 * time.Second
+const smtpSendTimeout = 30 * time.Second
 
 func NewApp() *App {
 	return &App{}
@@ -295,36 +297,139 @@ func (a *App) TestConnection() string {
 	}
 
 	auth := smtp.PlainAuth("", cfg.SenderEmail, cfg.SenderPass, cfg.SmtpServer)
-	addr := fmt.Sprintf("%s:%d", cfg.SmtpServer, cfg.SmtpTestPort)
-	dialer := net.Dialer{Timeout: smtpTestTimeout}
-	ctx, cancel := context.WithTimeout(context.Background(), smtpTestTimeout)
-	defer cancel()
-
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	implicitTLS := cfg.SmtpTestPort == 465
+	client, remote, err := newSMTPClient(cfg.SmtpServer, cfg.SmtpTestPort, implicitTLS, smtpTestTimeout)
 	if err != nil {
-		if os.IsTimeout(err) || ctx.Err() == context.DeadlineExceeded {
-			return fmt.Sprintf("❌ 连接服务器超时: %s，请检查 SMTP 地址、端口或网络防火墙", addr)
-		}
-		return "❌ 连接服务器失败: " + err.Error()
+		return formatSMTPConnectError(err, remote)
 	}
-	_ = conn.SetDeadline(time.Now().Add(smtpTestTimeout))
-
-	client, err := smtp.NewClient(conn, cfg.SmtpServer)
-	if err != nil {
-		_ = conn.Close()
-		return "❌ SMTP 握手失败: " + err.Error()
-	}
-
 	defer client.Close()
 
-	if err = client.StartTLS(&tls.Config{ServerName: cfg.SmtpServer, MinVersion: tls.VersionTLS12}); err != nil {
-		return "❌ TLS 握手失败: " + err.Error()
+	if !implicitTLS {
+		if err = client.StartTLS(&tls.Config{ServerName: cfg.SmtpServer, MinVersion: tls.VersionTLS12}); err != nil {
+			return "❌ TLS 握手失败: " + err.Error()
+		}
 	}
 	if err = client.Auth(auth); err != nil {
 		return "❌ 密码/授权码错误: " + err.Error()
 	}
 	_ = client.Quit()
-	return "✅ SMTP 连接测试成功！配置正确。"
+	return fmt.Sprintf("✅ SMTP 连接测试成功！配置正确。连接地址: %s", remote)
+}
+
+func newSMTPClient(host string, port int, implicitTLS bool, timeout time.Duration) (*smtp.Client, string, error) {
+	addr, err := resolveSMTPAddress(host, port, timeout)
+	if err != nil {
+		return nil, fmt.Sprintf("%s:%d", host, port), err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	dialer := net.Dialer{Timeout: timeout}
+
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, addr, err
+	}
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+
+	if implicitTLS {
+		conn = tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+	}
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		_ = conn.Close()
+		return nil, addr, err
+	}
+	return client, addr, nil
+}
+
+func resolveSMTPAddress(host string, port int, timeout time.Duration) (string, error) {
+	defaultAddr := fmt.Sprintf("%s:%d", host, port)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	if err == nil {
+		if ip := firstRealIP(ips); ip != nil {
+			return net.JoinHostPort(ip.String(), fmt.Sprintf("%d", port)), nil
+		}
+	}
+
+	realIPs, dohErr := resolveHostByDoH(host, timeout)
+	if dohErr == nil && len(realIPs) > 0 {
+		return net.JoinHostPort(realIPs[0].String(), fmt.Sprintf("%d", port)), nil
+	}
+
+	if err != nil {
+		return defaultAddr, err
+	}
+	if dohErr != nil {
+		return defaultAddr, fmt.Errorf("DNS 解析得到 TUN fake-ip，且真实 DNS 解析失败: %w", dohErr)
+	}
+	return defaultAddr, nil
+}
+
+type dohResponse struct {
+	Answer []struct {
+		Type int    `json:"type"`
+		Data string `json:"data"`
+	} `json:"Answer"`
+}
+
+func resolveHostByDoH(host string, timeout time.Duration) ([]net.IP, error) {
+	endpoint := "https://dns.alidns.com/resolve?name=" + url.QueryEscape(host) + "&type=A"
+	client := http.Client{Timeout: timeout}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result dohResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	var ips []net.IP
+	for _, answer := range result.Answer {
+		if answer.Type != 1 {
+			continue
+		}
+		ip := net.ParseIP(answer.Data)
+		if ip == nil || isFakeIP(ip) {
+			continue
+		}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("未获得可用 A 记录")
+	}
+	return ips, nil
+}
+
+func firstRealIP(ips []net.IP) net.IP {
+	for _, ip := range ips {
+		if !isFakeIP(ip) {
+			return ip
+		}
+	}
+	return nil
+}
+
+func isFakeIP(ip net.IP) bool {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	return ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19)
+}
+
+func formatSMTPConnectError(err error, remote string) string {
+	if os.IsTimeout(err) || strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		return fmt.Sprintf("❌ 连接或握手超时: %s。若开启 TUN，请确认代理规则允许 SMTP 直连，或允许程序访问真实 SMTP IP。原始错误: %v", remote, err)
+	}
+	return fmt.Sprintf("❌ SMTP 握手失败: %s (%v)", remote, err)
 }
 
 func (a *App) SendSelectedBooks(filePaths []string) {
@@ -462,16 +567,56 @@ func (a *App) sendBookFile(cfg Config, path string, originalName string) (string
 	attachment.Header.Set("Content-Type", "application/octet-stream")
 	e.Attachments = append(e.Attachments, attachment)
 
-	err = e.SendWithTLS(
-		fmt.Sprintf("%s:%d", cfg.SmtpServer, cfg.SmtpPort),
-		smtp.PlainAuth("", cfg.SenderEmail, cfg.SenderPass, cfg.SmtpServer),
-		&tls.Config{ServerName: cfg.SmtpServer, MinVersion: tls.VersionTLS12},
-	)
+	err = sendEmailWithResolvedSMTP(e, cfg)
 	if err != nil && err != io.EOF && !strings.Contains(err.Error(), "short response") {
 		return cleanName, err
 	}
 
 	return cleanName, nil
+}
+
+func sendEmailWithResolvedSMTP(e *email.Email, cfg Config) error {
+	implicitTLS := cfg.SmtpPort == 465
+	client, _, err := newSMTPClient(cfg.SmtpServer, cfg.SmtpPort, implicitTLS, smtpSendTimeout)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if !implicitTLS {
+		if err := client.StartTLS(&tls.Config{ServerName: cfg.SmtpServer, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+
+	if err := client.Auth(smtp.PlainAuth("", cfg.SenderEmail, cfg.SenderPass, cfg.SmtpServer)); err != nil {
+		return err
+	}
+	if err := client.Mail(cfg.SenderEmail); err != nil {
+		return err
+	}
+	if err := client.Rcpt(cfg.TargetKindle); err != nil {
+		return err
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+
+	message, err := e.Bytes()
+	if err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if _, err := writer.Write(message); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func cleanBookName(name string) string {
