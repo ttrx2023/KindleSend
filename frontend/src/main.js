@@ -252,11 +252,6 @@ function saveSettings() {
         smtpTestPort: readPort('cfg-smtp-test-port', 587),
     };
 
-    if (!config.senderEmail || !config.senderPass || !config.targetKindle) {
-        alert('发件邮箱、授权码和 Kindle 接收邮箱不能为空');
-        return;
-    }
-
     window.go.main.App.SaveSettings(config)
         .then((res) => {
             showLog(res);
@@ -300,11 +295,13 @@ function testConnInline() {
         .then((res) => {
             btn.innerText = originalText;
             btn.disabled = false;
+            showLog(res);
             showInlineTestResult(btn, res.includes('✅'));
         })
-        .catch(() => {
+        .catch((err) => {
             btn.innerText = originalText;
             btn.disabled = false;
+            showLog(`❌ 连通测试失败: ${escapeHtml(err.message || String(err))}`);
             showInlineTestResult(btn, false);
         });
 }
@@ -331,13 +328,33 @@ function loadFiles() {
         .then((books) => {
             allBooks = books || [];
             renderTable();
-            getElement('status-text').innerText = `已加载 ${allBooks.length} 个文件`;
+            if (allBooks.length === 0) {
+                updateLibraryScanMessage();
+            } else {
+                getElement('status-text').innerText = `已加载 ${allBooks.length} 个文件`;
+            }
         })
         .catch((err) => {
             allBooks = [];
             renderTable();
             getElement('status-text').innerText = '加载失败';
             showLog(`❌ 加载书籍失败: ${escapeHtml(err.message || String(err))}`);
+        });
+}
+
+function updateLibraryScanMessage() {
+    if (!window.go.main.App.GetLibraryScanMessage) {
+        getElement('status-text').innerText = '未找到可发送文件';
+        return;
+    }
+
+    window.go.main.App.GetLibraryScanMessage()
+        .then((message) => {
+            getElement('status-text').innerText = message.replace(/^[^\s]+\s*/, '');
+            showLog(escapeHtml(message));
+        })
+        .catch(() => {
+            getElement('status-text').innerText = '未找到可发送文件';
         });
 }
 

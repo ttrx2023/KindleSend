@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/smtp"
 	"net/textproto"
 	"net/url"
@@ -78,6 +79,8 @@ var supportedBookExts = map[string]bool{
 	".txt":  true,
 }
 
+const smtpTestTimeout = 8 * time.Second
+
 func NewApp() *App {
 	return &App{}
 }
@@ -117,10 +120,6 @@ func (a *App) loadConfig() {
 
 func (a *App) SaveSettings(cfg Config) string {
 	cfg = normalizeConfig(cfg)
-	if cfg.SenderEmail == "" || cfg.SenderPass == "" || cfg.TargetKindle == "" {
-		return "❌ 保存失败: 发件邮箱、授权码和 Kindle 接收邮箱不能为空"
-	}
-
 	a.config = cfg
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -158,6 +157,18 @@ func normalizeConfig(cfg Config) Config {
 	}
 
 	return cfg
+}
+
+func normalizeDownloadPath(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.Trim(path, "\"'")
+	path = os.ExpandEnv(path)
+	if strings.HasPrefix(path, "~") {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(homeDir, strings.TrimPrefix(strings.TrimPrefix(path, "~"), string(os.PathSeparator)))
+		}
+	}
+	return filepath.Clean(path)
 }
 
 func (a *App) GetSettings() (Config, bool) {
@@ -198,38 +209,83 @@ func (a *App) SearchBook(query string) {
 func (a *App) ListBooks() []BookInfo {
 	var books []BookInfo
 	cfg := normalizeConfig(a.config)
+	root := normalizeDownloadPath(cfg.DownloadPath)
 
-	files, err := filepath.Glob(filepath.Join(cfg.DownloadPath, "*.*"))
-	if err != nil {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
 		return books
 	}
 
-	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f))
-		if !supportedBookExts[ext] {
-			continue
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
 		}
 
-		info, err := os.Stat(f)
+		ext := strings.ToLower(filepath.Ext(path))
+		if !supportedBookExts[ext] {
+			return nil
+		}
+
+		info, err := entry.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		cleanType := strings.TrimPrefix(ext, ".")
 		books = append(books, BookInfo{
 			Name:    info.Name(),
-			Path:    f,
+			Path:    path,
 			Size:    fmt.Sprintf("%.2f MB", float64(info.Size())/1024/1024),
 			ModTime: info.ModTime().Format("2006-01-02 15:04"),
 			RawTime: info.ModTime().Unix(),
 			Type:    strings.ToUpper(cleanType),
 		})
-	}
+		return nil
+	})
 
 	sort.Slice(books, func(i, j int) bool {
 		return books[i].RawTime > books[j].RawTime
 	})
 	return books
+}
+
+func (a *App) GetLibraryScanMessage() string {
+	cfg := normalizeConfig(a.config)
+	root := normalizeDownloadPath(cfg.DownloadPath)
+
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Sprintf("❌ 下载路径不存在: %s", root)
+		}
+		return fmt.Sprintf("❌ 无法访问下载路径: %s (%v)", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Sprintf("❌ 下载路径不是文件夹: %s", root)
+	}
+
+	totalFiles := 0
+	supportedFiles := 0
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+
+		totalFiles++
+		if supportedBookExts[strings.ToLower(filepath.Ext(path))] {
+			supportedFiles++
+		}
+		return nil
+	})
+
+	if supportedFiles == 0 {
+		if totalFiles == 0 {
+			return fmt.Sprintf("📂 目录可访问，但里面没有文件: %s", root)
+		}
+		return fmt.Sprintf("📂 目录可访问，但未找到 EPUB、MOBI、PDF、AZW3 或 TXT 文件: %s", root)
+	}
+
+	return fmt.Sprintf("✅ 已在目录中找到 %d 个可发送文件", supportedFiles)
 }
 
 func (a *App) TestConnection() string {
@@ -239,10 +295,26 @@ func (a *App) TestConnection() string {
 	}
 
 	auth := smtp.PlainAuth("", cfg.SenderEmail, cfg.SenderPass, cfg.SmtpServer)
-	client, err := smtp.Dial(fmt.Sprintf("%s:%d", cfg.SmtpServer, cfg.SmtpTestPort))
+	addr := fmt.Sprintf("%s:%d", cfg.SmtpServer, cfg.SmtpTestPort)
+	dialer := net.Dialer{Timeout: smtpTestTimeout}
+	ctx, cancel := context.WithTimeout(context.Background(), smtpTestTimeout)
+	defer cancel()
+
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
+		if os.IsTimeout(err) || ctx.Err() == context.DeadlineExceeded {
+			return fmt.Sprintf("❌ 连接服务器超时: %s，请检查 SMTP 地址、端口或网络防火墙", addr)
+		}
 		return "❌ 连接服务器失败: " + err.Error()
 	}
+	_ = conn.SetDeadline(time.Now().Add(smtpTestTimeout))
+
+	client, err := smtp.NewClient(conn, cfg.SmtpServer)
+	if err != nil {
+		_ = conn.Close()
+		return "❌ SMTP 握手失败: " + err.Error()
+	}
+
 	defer client.Close()
 
 	if err = client.StartTLS(&tls.Config{ServerName: cfg.SmtpServer, MinVersion: tls.VersionTLS12}); err != nil {
