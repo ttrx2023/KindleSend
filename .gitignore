@@ -2,6 +2,7 @@
 build/bin/
 frontend/dist/
 frontend/wailsjs/
+.cache/
 
 # Local configuration (隐私文件)
 config.json

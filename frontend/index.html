@@ -10,7 +10,7 @@
         <div class="header-top">
             <div class="search-wrapper">
                 <span class="search-icon">🔍</span>
-                <input type="text" id="query" class="search-input" placeholder="输入书名 (自动调用 fuckfbi.ru)...">
+                <input type="text" id="query" class="search-input" placeholder="输入书名并按回车或点击搜索...">
             </div>
             <button class="btn-primary" onclick="searchBook()">搜索</button>
             <button class="btn-outline" onclick="testConn()">连通测试</button>
@@ -174,7 +174,7 @@
                 <div class="help-card">
                     <div class="help-head">⚙️ 配置三步走 (首次必看)</div>
                     <ul class="help-list">
-                        <li>1. <b>QQ 邮箱</b>：开启 POP3/SMTP 服务，获取 16 位授权码 (设置->账户)。</li>
+                        <li>1. <b>邮箱</b>：开启 POP3/SMTP 服务，获取授权码 (QQ 邮箱可在设置->账户中开启)。</li>
                         <li>2. <b>亚马逊</b>：将你的 QQ 邮箱加入“已认可的发件人列表” (个人文档设置)。</li>
                         <li>3. <b>本软件</b>：在设置中填入以上信息，并指定下载路径。</li>
                     </ul>
@@ -183,6 +183,7 @@
                     <div class="help-head" style="color:#b45309;">⚠️ 常见问题</div>
                     <ul class="help-list" style="color:#b45309;">
                         <li>• 若提示 "Authentication failed"，请检查授权码是否过期或填错。</li>
+                        <li>• 若使用非 QQ 邮箱，请在设置中改为对应的 SMTP 服务器和端口。</li>
                         <li>• 若 Kindle 收不到，请检查是否已在亚马逊后台添加白名单。</li>
                         <li>• 配置文件现在保存在系统 AppData 目录，升级软件配置不丢失。</li>
                     </ul>
